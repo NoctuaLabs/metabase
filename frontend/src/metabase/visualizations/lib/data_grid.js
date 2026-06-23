@@ -4,6 +4,7 @@ import _ from "underscore";
 import * as Pivot from "cljs/metabase.pivot.js";
 import { color as mbColor } from "metabase/ui/colors";
 import { formatValue } from "metabase/utils/formatting";
+import { evaluateTotalFormula } from "metabase/visualizations/lib/pivotTotalFormula";
 import { makeCellBackgroundGetter } from "metabase/visualizations/lib/table_format";
 import { migratePivotColumnSplitSetting } from "metabase-lib/v1/queries/utils/pivot";
 
@@ -91,7 +92,7 @@ export function computeNativePivotTotals(data, columnSplit, getColumnSetting) {
     });
   }
 
-  return valueIndexes.map((vi, aggIdx) => {
+  const defaultTotals = valueIndexes.map((vi, aggIdx) => {
     const col = data.cols[vi];
     const isPercent = isPercentByValue[aggIdx];
     const value = isPercent
@@ -106,6 +107,21 @@ export function computeNativePivotTotals(data, columnSplit, getColumnSetting) {
       isPercent,
     };
   });
+
+  // Apply custom total formulas so the grand-total values used by the totals
+  // chart and the diverging heatmap match the formula-driven Totals row.
+  const formulas = getTotalFormulas(data.cols, valueColNames, getColumnSetting);
+  if (Object.keys(formulas).length === 0) {
+    return defaultTotals;
+  }
+  const aggregatedByName = {};
+  defaultTotals.forEach((t) => {
+    aggregatedByName[t.name] = t.value;
+  });
+  const withFormulas = applyTotalFormulas(aggregatedByName, formulas);
+  return defaultTotals.map((t) =>
+    t.name in formulas ? { ...t, value: withFormulas[t.name] } : t,
+  );
 }
 
 export const COLUMN_FORMATTING_SETTING = "table.column_formatting";
@@ -122,6 +138,67 @@ export const BREAKDOWN_DIMENSION_SETTING = "pivot.breakdown_dimension";
 // brand ramp; "diverging" colors each cell green above / red below its column
 // average (the column's grand Total).
 export const HEATMAP_MODE_SETTING = "pivot.heatmap_mode";
+// Per-column: hide the measure from the rendered table while keeping it
+// available as an input to other columns' custom total formulas.
+export const COLUMN_HIDDEN = "pivot.hide_column";
+// Per-column: a custom arithmetic formula (e.g. "rev_d0 / spend_d0 * 100")
+// used to compute this column's total/subtotal rows from the OTHER columns'
+// aggregated totals, instead of the default sum / weighted-mean.
+export const COLUMN_TOTAL_FORMULA = "pivot.total_formula";
+
+// Reads each value column's custom total formula (COLUMN_TOTAL_FORMULA) into a
+// map of { columnName: formulaString } for the non-empty ones. `getColumnSetting`
+// is (col) => columnSettings. Returns {} when nothing is configured.
+function getTotalFormulas(cols, valueColNames, getColumnSetting) {
+  const formulas = {};
+  if (!getColumnSetting) {
+    return formulas;
+  }
+  const colByName = {};
+  cols.forEach((col) => {
+    colByName[col.name] = col;
+  });
+  for (const name of valueColNames) {
+    const col = colByName[name];
+    if (col == null) {
+      continue;
+    }
+    const formula = getColumnSetting(col)?.[COLUMN_TOTAL_FORMULA];
+    if (typeof formula === "string" && formula.trim() !== "") {
+      formulas[name] = formula;
+    }
+  }
+  return formulas;
+}
+
+// Applies any custom total formulas to an aggregated total/subtotal row in
+// place. `aggregatedByName` maps value-column name → its aggregated total for
+// this row (sum or weighted mean). For each column that has a formula, the
+// formula is re-evaluated against those aggregated values and the result
+// overwrites the column's total. A column referenced by a formula does not have
+// to be visible; only its aggregated value matters. Malformed formulas are
+// ignored (the default aggregation is kept).
+function applyTotalFormulas(aggregatedByName, formulas) {
+  if (Object.keys(formulas).length === 0) {
+    return aggregatedByName;
+  }
+  const resolve = (name) => {
+    const v = aggregatedByName[name];
+    return typeof v === "number" && isFinite(v) ? v : null;
+  };
+  // Evaluate every formula against the ORIGINAL aggregated values (snapshot)
+  // so formulas can't read each other's just-computed results, keeping the
+  // outcome independent of column order.
+  const updates = {};
+  for (const [name, formula] of Object.entries(formulas)) {
+    try {
+      updates[name] = evaluateTotalFormula(formula, resolve);
+    } catch {
+      // Invalid formula → leave the default aggregation untouched.
+    }
+  }
+  return { ...aggregatedByName, ...updates };
+}
 
 // For native SQL queries the backend never adds the pivot-grouping column.
 // We synthesize it here so the CLJS pivot engine can process the data.
@@ -201,6 +278,14 @@ function addPivotGroupingToNativeData(data, columnSplit, getColumnSetting) {
   const weightAggIdx = valueAggTypes.findIndex((t) => t === "sum");
   const weightColIndex = weightAggIdx >= 0 ? valueIndexes[weightAggIdx] : null;
 
+  // Custom total formulas (e.g. roas = rev / spend * 100). Applied to the
+  // synthesized total/subtotal rows below, after the default aggregation.
+  const totalFormulas = getTotalFormulas(
+    data.cols,
+    valueColNames,
+    getColumnSetting,
+  );
+
   // Primary rows: every breakout is active → pivot-grouping = 0.
   const primaryRows = data.rows.map((row) => [...row, 0]);
 
@@ -278,6 +363,22 @@ function addPivotGroupingToNativeData(data, columnSplit, getColumnSetting) {
           accRow[vi] = wsum > 0 ? wxsum / wsum : null;
         }
       });
+      // Override formula columns from this row's aggregated totals.
+      if (Object.keys(totalFormulas).length > 0) {
+        const aggregatedByName = {};
+        valueColNames.forEach((name, aggIdx) => {
+          aggregatedByName[name] = accRow[valueIndexes[aggIdx]];
+        });
+        const withFormulas = applyTotalFormulas(
+          aggregatedByName,
+          totalFormulas,
+        );
+        valueColNames.forEach((name, aggIdx) => {
+          if (name in totalFormulas) {
+            accRow[valueIndexes[aggIdx]] = withFormulas[name];
+          }
+        });
+      }
       subtotalRows.push([...accRow, groupingMask]);
     }
   }
@@ -334,17 +435,36 @@ export function multiLevelPivot(data, settings) {
     };
   }
 
+  // Hidden value columns (COLUMN_HIDDEN) are kept in `columnSplit.values` so
+  // they are still AGGREGATED (and thus available to other columns' custom
+  // total formulas), but excluded from the values that actually get RENDERED.
+  const hiddenValueNames = new Set(
+    (columnSplit.values ?? []).filter((name) => {
+      const col = data.cols.find((c) => c.name === name);
+      return col != null && settings.column(col)?.[COLUMN_HIDDEN] === true;
+    }),
+  );
+
   const processedData = isNativeQuery
     ? addPivotGroupingToNativeData(data, columnSplit, settings.column)
     : data;
 
   const columns = Pivot.columns_without_pivot_group(processedData.cols);
 
+  // Use the full split for row/column indexes, but drop hidden columns from the
+  // rendered value indexes.
+  const renderColumnSplit = {
+    ...columnSplit,
+    values: (columnSplit.values ?? []).filter(
+      (name) => !hiddenValueNames.has(name),
+    ),
+  };
+
   const {
     columns: columnIndexes,
     rows: rowIndexes,
     values: valueIndexes,
-  } = _.mapObject(columnSplit, (columnNames) =>
+  } = _.mapObject(renderColumnSplit, (columnNames) =>
     columnNames
       .map((columnName) => columns.findIndex((col) => col.name === columnName))
       .filter((index) => index !== -1),

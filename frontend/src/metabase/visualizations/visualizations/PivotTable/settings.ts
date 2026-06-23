@@ -9,16 +9,19 @@ import {
   BREAKDOWN_DIMENSION_SETTING,
   COLLAPSED_ROWS_SETTING,
   COLUMN_FORMATTING_SETTING,
+  COLUMN_HIDDEN,
   COLUMN_SHOW_TOTALS,
   COLUMN_SORT_ORDER,
   COLUMN_SORT_ORDER_ASC,
   COLUMN_SORT_ORDER_DESC,
   COLUMN_SPLIT_SETTING,
+  COLUMN_TOTAL_FORMULA,
   HEATMAP_MODE_SETTING,
   getBreakdownOptions,
   isNativePivotData,
   isPivotGroupColumn,
 } from "metabase/visualizations/lib/data_grid";
+import { isValidTotalFormula } from "metabase/visualizations/lib/pivotTotalFormula";
 import { columnSettings } from "metabase/visualizations/lib/settings/column";
 import type { ComputedVisualizationSettings } from "metabase/visualizations/types";
 import { migratePivotColumnSplitSetting } from "metabase-lib/v1/queries/utils/pivot";
@@ -488,7 +491,56 @@ export const _columnSettings = {
     widget: "input",
     getDefault: displayNameForColumn,
   },
+  [COLUMN_HIDDEN]: {
+    get title() {
+      return t`Hide column`;
+    },
+    get hint() {
+      return t`Hide this measure from the table. It can still be referenced by other columns' custom total formulas.`;
+    },
+    widget: "toggle",
+    inline: true,
+    getDefault: () => false,
+    // Only measures (value columns) can be hidden.
+    getHidden: (
+      column: DatasetColumn,
+      _columnSettings: DatasetColumn,
+      { settings }: { settings: VisualizationSettings },
+    ) => !isValueColumn(column, settings),
+  },
+  [COLUMN_TOTAL_FORMULA]: {
+    get title() {
+      return t`Custom total formula`;
+    },
+    get hint() {
+      return t`Compute this column's totals from other columns' aggregated totals, e.g. rev_d0 / spend_d0 * 100. Leave blank to use the default sum or weighted average.`;
+    },
+    widget: "input",
+    getProps: () => ({ placeholder: t`e.g. rev_d0 / spend_d0 * 100` }),
+    getDefault: () => "",
+    isValid: (
+      _column: DatasetColumn,
+      columnSettings: { [COLUMN_TOTAL_FORMULA]?: string },
+    ) => isValidTotalFormula(columnSettings[COLUMN_TOTAL_FORMULA] ?? ""),
+    getHidden: (
+      column: DatasetColumn,
+      _columnSettings: DatasetColumn,
+      { settings }: { settings: VisualizationSettings },
+    ) => !isValueColumn(column, settings),
+  },
 };
+
+// True if `column` is in the "values" (measures) partition of the pivot split.
+function isValueColumn(
+  column: DatasetColumn,
+  settings: VisualizationSettings,
+): boolean {
+  if (column.source === "aggregation") {
+    return true;
+  }
+  const values = settings[COLUMN_SPLIT_SETTING]?.values ?? [];
+  return values.some((name) => name === column.name);
+}
 
 /*
   When comparing field refs for pivot viz settings, ignore `base-type`.
