@@ -14,7 +14,6 @@ interface PivotTableCellProps {
   isBorderedHeader?: boolean;
   hasTopBorder?: boolean;
   isTransparent?: boolean;
-  isRowHovered?: boolean;
 }
 
 const getCellBackgroundColor = ({
@@ -106,22 +105,12 @@ export const PivotTableCell = styled.div<PivotTableCellProps>`
       border-top: 1px solid ${color("border-subtle")};
     `}
 
-  ${(props) =>
-    props.isRowHovered &&
-    css`
-      /* Full-row hover guide: thin lines on top and bottom of every cell in the
-         hovered row. Inset box-shadow so it never shifts layout. */
-      box-shadow:
-        inset 0 1px 0 0 ${color("brand")},
-        inset 0 -1px 0 0 ${color("brand")};
-    `}
-
   &:hover {
     background-color: ${getCellHoverBackground};
 
-    /* The cell directly under the cursor is framed on all four sides: the row
-       guide already draws top/bottom, this adds left/right (and reasserts
-       top/bottom so the frame is complete even on non-row-hovered cells). */
+    /* Frame the cell directly under the cursor on all four sides. Inset
+       box-shadow so it never shifts layout. Pure CSS — no JS hover state, so
+       hovering never triggers a React re-render of the virtualized grid. */
     box-shadow:
       inset 0 1px 0 0 ${color("brand")},
       inset 0 -1px 0 0 ${color("brand")},

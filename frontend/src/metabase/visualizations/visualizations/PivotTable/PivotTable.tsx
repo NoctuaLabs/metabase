@@ -137,9 +137,6 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
     // Shown while a collapse/expand toggle re-pivots the data, which can block
     // the main thread for a noticeable moment on large datasets.
     const [isRecomputing, setIsRecomputing] = useState(false);
-    // Body row currently under the cursor, used to draw a full-row hover guide
-    // (top + bottom border across every cell in that row). null = none hovered.
-    const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
     const columnWidthSettings = settings["pivot_table.column_widths"];
 
     const theme = useMantineTheme();
@@ -950,10 +947,7 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
                 </div>
                 <div className={cx(CS.flex, CS.flexFull)}>
                   {/* left header */}
-                  <div
-                    style={{ width: leftHeaderWidth }}
-                    onMouseLeave={() => setHoveredRowIndex(null)}
-                  >
+                  <div style={{ width: leftHeaderWidth }}>
                     <AutoSizer disableWidth nonce={getCspNonce()}>
                       {() => (
                         <Collection
@@ -972,8 +966,6 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
                               settings={settings}
                               getCellClickHandler={getCellClickHandler}
                               isNativeQuery={isNativePivotData(data.cols)}
-                              hoveredRowIndex={hoveredRowIndex}
-                              onRowHover={setHoveredRowIndex}
                             />
                           )}
                           cellSizeAndPositionGetter={({ index }) =>
@@ -992,7 +984,7 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
                     </AutoSizer>
                   </div>
                   {/* pivot table body */}
-                  <div onMouseLeave={() => setHoveredRowIndex(null)}>
+                  <div>
                     <AutoSizer disableWidth nonce={getCspNonce()}>
                       {() => (
                         <Grid
@@ -1033,8 +1025,6 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
                                   valueIndexes,
                                   columnIndex,
                                 )}
-                                isRowHovered={hoveredRowIndex === rowIndex}
-                                onRowHover={() => setHoveredRowIndex(rowIndex)}
                               />
                             );
                           }}
