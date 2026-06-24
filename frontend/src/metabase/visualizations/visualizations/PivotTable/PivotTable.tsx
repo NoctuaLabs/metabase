@@ -38,8 +38,10 @@ import {
   COLLAPSED_ROWS_SETTING,
   COLUMN_SHOW_TOTALS,
   HEATMAP_MODE_SETTING,
+  SHOW_HIDDEN_COLUMNS_SETTING,
   computeNativePivotTotals,
   getBreakdownOptions,
+  hasHiddenValueColumns,
   isNativePivotData,
   isPivotGroupColumn,
   multiLevelPivot,
@@ -98,6 +100,20 @@ const BREAKDOWN_BAR_HEIGHT = 40;
 const mapStateToProps = (state: State) => ({
   fontFamily: getSetting(state, "application-font"),
 });
+
+// The toolbar row is shown when any of its controls is available. Kept as a
+// module-level helper so the (long) boolean OR doesn't inflate the main
+// component's cyclomatic complexity.
+function shouldShowPivotToolbar(flags: {
+  showBreakdownPicker: boolean;
+  canShowTotalsChart: boolean;
+  canCollapseAllRows: boolean;
+  canExpandAllRows: boolean;
+  canToggleHeatmap: boolean;
+  hasHiddenColumns: boolean;
+}): boolean {
+  return Object.values(flags).some(Boolean);
+}
 
 const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
   function PivotTableInner(
@@ -383,6 +399,12 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
       });
     }, [onUpdateVisualizationSettings, settings]);
 
+    const handleToggleHiddenColumns = useCallback(() => {
+      onUpdateVisualizationSettings({
+        [SHOW_HIDDEN_COLUMNS_SETTING]: !settings[SHOW_HIDDEN_COLUMNS_SETTING],
+      });
+    }, [onUpdateVisualizationSettings, settings]);
+
     // Grand totals per measure column (weighted for percent columns), used by
     // the "View totals in chart" line-chart view.
     const totals = useMemo(() => {
@@ -656,14 +678,24 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
     // The heatmap toggle is relevant when there are percent columns to color.
     const canToggleHeatmap = (totals ?? []).some((tot) => tot.isPercent);
     const heatmapOn = settings[HEATMAP_MODE_SETTING] === "diverging";
+    // The "Show hidden columns" toggle is only offered when at least one value
+    // column is actually hidden (COLUMN_HIDDEN per-column flag).
+    const hasHiddenColumns = hasHiddenValueColumns(
+      data?.cols,
+      settings["pivot_table.column_split"],
+      settings.column,
+    );
+    const hiddenColumnsShown = settings[SHOW_HIDDEN_COLUMNS_SETTING] === true;
     // The toolbar row holds the breakdown picker, the collapse/expand buttons,
-    // the heatmap toggle, and/or the chart toggle.
-    const showToolbar =
-      showBreakdownPicker ||
-      canShowTotalsChart ||
-      canCollapseAllRows ||
-      canExpandAllRows ||
-      canToggleHeatmap;
+    // the heatmap toggle, the hidden-columns toggle, and/or the chart toggle.
+    const showToolbar = shouldShowPivotToolbar({
+      showBreakdownPicker,
+      canShowTotalsChart,
+      canCollapseAllRows,
+      canExpandAllRows,
+      canToggleHeatmap,
+      hasHiddenColumns,
+    });
     const breakdownBarHeight = showToolbar ? BREAKDOWN_BAR_HEIGHT : 0;
 
     const topHeaderHeight = topHeaderRows * CELL_HEIGHT;
@@ -798,6 +830,18 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
                       data-testid="pivot-heatmap-toggle"
                     >
                       {heatmapOn ? t`Hide heatmap` : t`Show heatmap`}
+                    </Button>
+                  )}
+                  {!showTotalsChart && hasHiddenColumns && (
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      onClick={handleToggleHiddenColumns}
+                      data-testid="pivot-hidden-columns-toggle"
+                    >
+                      {hiddenColumnsShown
+                        ? t`Hide hidden columns`
+                        : t`Show hidden columns`}
                     </Button>
                   )}
                   {canShowTotalsChart && (

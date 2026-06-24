@@ -3,6 +3,7 @@ import {
   COLUMN_SHOW_TOTALS,
   COLUMN_SPLIT_SETTING,
   COLUMN_TOTAL_FORMULA,
+  SHOW_HIDDEN_COLUMNS_SETTING,
   computeNativePivotTotals,
   multiLevelPivot,
 } from "metabase/visualizations/lib/data_grid";
@@ -35,6 +36,7 @@ function nativeData(rows) {
 function settings({
   formula = "rev_d0 / spend_d0",
   hidden = {},
+  showHidden = false,
   collapsedRows = ["1"],
 } = {}) {
   return {
@@ -50,6 +52,7 @@ function settings({
       columns: [],
       values: ["rev_d0", "spend_d0", "roas_d0"],
     },
+    [SHOW_HIDDEN_COLUMNS_SETTING]: showHidden,
     "pivot_table.collapsed_rows": { value: collapsedRows },
     "pivot.show_row_totals": true,
     "pivot.show_column_totals": false,
@@ -127,6 +130,20 @@ describe("native pivot hidden column", () => {
     expect(values[0]).toBe("374.42");
     const expected = (219.07 + 155.35) / (242.17 + 198.66);
     expect(values[1]).toBe(`${(expected * 100).toFixed(2)}%`);
+  });
+
+  it("renders the hidden column when SHOW_HIDDEN_COLUMNS_SETTING is on", () => {
+    // Same hidden spend_d0, but the toolbar override reveals it: all three
+    // measures render again, without clearing the per-column hide flag.
+    const result = multiLevelPivot(
+      data,
+      settings({ hidden: { spend_d0: true }, showHidden: true }),
+    );
+    const section = result.getRowSection(0, 0);
+    expect(section).toHaveLength(3);
+    const values = section.map((c) => c.value);
+    expect(values[0]).toBe("374.42"); // rev_d0
+    expect(values[1]).toBe("440.83"); // spend_d0 now visible
   });
 });
 

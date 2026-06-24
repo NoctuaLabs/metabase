@@ -35,6 +35,20 @@ export function getBreakdownOptions(columnSplit) {
   return allRows.length >= 3 ? allRows.slice(1) : [];
 }
 
+// True if any value (measure) column is currently hidden via the per-column
+// COLUMN_HIDDEN flag. Used by the "Show hidden columns" toolbar toggle to know
+// whether to offer the button. `cols` is data.cols; `getColumnSetting` is
+// (col) => columnSettings.
+export function hasHiddenValueColumns(cols, columnSplit, getColumnSetting) {
+  if (typeof getColumnSetting !== "function") {
+    return false;
+  }
+  return (columnSplit?.values ?? []).some((name) => {
+    const col = (cols ?? []).find((c) => c.name === name);
+    return col != null && getColumnSetting(col)?.[COLUMN_HIDDEN] === true;
+  });
+}
+
 // Computes the grand-total value per measure column for a native pivot, using
 // the same aggregation rules as the synthesized "Totals" row: percent columns
 // are a weighted mean (weight = first non-percent value column, over non-null
@@ -141,6 +155,10 @@ export const HEATMAP_MODE_SETTING = "pivot.heatmap_mode";
 // Per-column: hide the measure from the rendered table while keeping it
 // available as an input to other columns' custom total formulas.
 export const COLUMN_HIDDEN = "pivot.hide_column";
+// View-only override (toggled by a toolbar button, not the settings panel):
+// when true, hidden columns are rendered anyway so the user can peek at them
+// without clearing the per-column COLUMN_HIDDEN flags.
+export const SHOW_HIDDEN_COLUMNS_SETTING = "pivot.show_hidden_columns";
 // Per-column: a custom arithmetic formula (e.g. "rev_d0 / spend_d0 * 100")
 // used to compute this column's total/subtotal rows from the OTHER columns'
 // aggregated totals, instead of the default sum / weighted-mean.
@@ -438,11 +456,16 @@ export function multiLevelPivot(data, settings) {
   // Hidden value columns (COLUMN_HIDDEN) are kept in `columnSplit.values` so
   // they are still AGGREGATED (and thus available to other columns' custom
   // total formulas), but excluded from the values that actually get RENDERED.
+  // The SHOW_HIDDEN_COLUMNS_SETTING toolbar override reveals them without
+  // clearing the per-column flags.
+  const showHiddenColumns = settings[SHOW_HIDDEN_COLUMNS_SETTING] === true;
   const hiddenValueNames = new Set(
-    (columnSplit.values ?? []).filter((name) => {
-      const col = data.cols.find((c) => c.name === name);
-      return col != null && settings.column(col)?.[COLUMN_HIDDEN] === true;
-    }),
+    showHiddenColumns
+      ? []
+      : (columnSplit.values ?? []).filter((name) => {
+          const col = data.cols.find((c) => c.name === name);
+          return col != null && settings.column(col)?.[COLUMN_HIDDEN] === true;
+        }),
   );
 
   const processedData = isNativeQuery

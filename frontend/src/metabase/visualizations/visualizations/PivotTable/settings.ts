@@ -17,6 +17,7 @@ import {
   COLUMN_SPLIT_SETTING,
   COLUMN_TOTAL_FORMULA,
   HEATMAP_MODE_SETTING,
+  SHOW_HIDDEN_COLUMNS_SETTING,
   getBreakdownOptions,
   isNativePivotData,
   isPivotGroupColumn,
@@ -307,6 +308,15 @@ export const settings = {
       // "brand" (default) single-hue ramp, or "diverging" green/red around the
       // column average. Toggled by the "Show heatmap" button in the toolbar.
       settings[HEATMAP_MODE_SETTING] ?? "brand",
+  },
+  [SHOW_HIDDEN_COLUMNS_SETTING]: {
+    hidden: true,
+    // View-only override toggled by the "Show hidden columns" toolbar button.
+    // Default false: per-column COLUMN_HIDDEN flags are respected.
+    getValue: (
+      _series: Series,
+      settings: Partial<VisualizationSettings> = {},
+    ) => settings[SHOW_HIDDEN_COLUMNS_SETTING] ?? false,
   },
   "pivot.condense_duplicate_totals": {
     get section() {
