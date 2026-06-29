@@ -102,6 +102,118 @@ export function isColumnValid(col: DatasetColumn) {
   );
 }
 
+// The payload sent to a configured "Custom Action" POST URL: the clicked row's
+// visible cells plus the filters currently applied to the query.
+export type CustomActionPayload = {
+  row: Record<string, unknown>;
+  filters: Record<string, unknown>;
+};
+
+// The subset of the processed pivot model (`multiLevelPivot` result) needed to
+// read a single row's visible cells. `getRowSection` returns body cells, each at
+// least a HeaderItem (we only read `value` and `path`).
+type PivotedRowSource = {
+  getRowSection: (colIndex: number, rowIndex: number) => HeaderItem[];
+  columnCount: number;
+  valueIndexes: number[];
+  rowIndexes: number[];
+  columnsWithoutPivotGroup: DatasetColumn[];
+};
+
+// Builds the `{ columnTitle: value }` map of VISIBLE cells for the row whose
+// first-column (left-header leaf) cell was clicked. `item.offset` is the body
+// grid row index for that leaf row (see metabase.pivot.core/tree-to-array), so
+// we read every body section at that row and collect the rendered measure
+// values. The row-header dimension value(s) come from the clicked item itself.
+// `getColumnTitle` maps a column to its display title (respecting per-column
+// `column_title` settings).
+export function getRowDataForCustomAction(
+  item: HeaderItem,
+  pivoted: PivotedRowSource,
+  getColumnTitle: (column: DatasetColumn) => string,
+): Record<string, unknown> {
+  const {
+    getRowSection,
+    columnCount,
+    valueIndexes,
+    rowIndexes,
+    columnsWithoutPivotGroup,
+  } = pivoted;
+  const row: Record<string, unknown> = {};
+
+  // Row-header dimension value. `item.path` holds the rawValues from the root to
+  // this leaf, one per row dimension; pair each with its column title.
+  const path = item.path ?? [];
+  rowIndexes.forEach((colIdx, level) => {
+    const column = columnsWithoutPivotGroup[colIdx];
+    if (column != null && level < path.length) {
+      row[getColumnTitle(column)] = path[level];
+    }
+  });
+  // Fall back to the formatted display value if there was no path.
+  if (path.length === 0 && rowIndexes.length > 0) {
+    const column = columnsWithoutPivotGroup[rowIndexes[0]];
+    if (column != null) {
+      row[getColumnTitle(column)] = item.value;
+    }
+  }
+
+  // Measure cells across every column group at this body row.
+  for (let colIndex = 0; colIndex < columnCount; colIndex++) {
+    const section = getRowSection(colIndex, item.offset) ?? [];
+    section.forEach((cell, measureIdx) => {
+      const valueColIdx = valueIndexes[measureIdx];
+      const column = columnsWithoutPivotGroup[valueColIdx];
+      if (column == null) {
+        return;
+      }
+      // When there is more than one column group, disambiguate the key with the
+      // column-path label that prefixes the section.
+      const baseTitle = getColumnTitle(column);
+      const key =
+        columnCount > 1 && cell.path != null && cell.path.length > 0
+          ? `${cell.path.join(" / ")} / ${baseTitle}`
+          : baseTitle;
+      row[key] = cell.value;
+    });
+  }
+
+  return row;
+}
+
+// Collects the parameters actually applied to the query run that produced this
+// series, as a `{ name | slug: value }` map. Reads from the series/question
+// layer (`json_query.parameters`, falling back to `data.parameters`) so it works
+// identically in the query builder and on a dashboard, with no Redux wiring.
+// Parameters without a value are skipped.
+export function getActivePivotFilters(
+  rawSeries: Series | undefined | null,
+): Record<string, unknown> {
+  const first = rawSeries?.[0] as
+    | {
+        data?: {
+          parameters?: { name?: string; slug?: string; value?: unknown }[];
+        };
+        json_query?: {
+          parameters?: { name?: string; slug?: string; value?: unknown }[];
+        };
+      }
+    | undefined;
+  const parameters =
+    first?.json_query?.parameters ?? first?.data?.parameters ?? [];
+  const filters: Record<string, unknown> = {};
+  for (const param of parameters) {
+    if (param == null || param.value == null) {
+      continue;
+    }
+    const key = param.name || param.slug;
+    if (key) {
+      filters[key] = param.value;
+    }
+  }
+  return filters;
+}
+
 export function isFormattablePivotColumn(column: DatasetColumn) {
   return column.source === "aggregation" || column.source === "native";
 }

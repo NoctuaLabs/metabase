@@ -29,6 +29,14 @@ export const StoreApi = {
   tokenStatus: GET("/api/premium-features/token/status"),
 };
 
+// Proxies a pivot-table "Custom Action" POST through the backend so it can reach
+// non-HTTPS services without browser mixed-content / CORS issues. The service
+// responds with HTML; since it isn't JSON, the api layer leaves the body as the
+// raw HTML string (JSON.parse fails and falls back to text).
+export const PivotActionApi = {
+  proxy: POST("/api/pivot-action/proxy"),
+};
+
 /**
  * Handles API errors for query endpoints. For 4xx errors from streaming query
  * endpoints, the error response body contains the actual error data that should

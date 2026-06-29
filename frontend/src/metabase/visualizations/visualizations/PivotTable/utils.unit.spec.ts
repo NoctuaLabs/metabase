@@ -11,8 +11,10 @@ import type { HeaderItem } from "./types";
 import {
   addMissingCardBreakouts,
   checkRenderable,
+  getActivePivotFilters,
   getColumnValues,
   getLeftHeaderWidths,
+  getRowDataForCustomAction,
   isColumnValid,
   isFormattablePivotColumn,
   leftHeaderCellSizeAndPositionGetter,
@@ -411,6 +413,104 @@ describe("Visualizations > Visualizations > PivotTable > utils", () => {
         [0, 1, 2],
       );
       expect(result.width).toBe(100);
+    });
+  });
+
+  describe("getRowDataForCustomAction", () => {
+    const country = createMockColumn({ source: "native", name: "country" });
+    const users = createMockColumn({ source: "native", name: "new_users" });
+    const revenue = createMockColumn({ source: "native", name: "revenue" });
+    const columnsWithoutPivotGroup = [country, users, revenue];
+    const getColumnTitle = (col: { name: string }) => col.name;
+
+    it("collects the row-header value and visible measure cells", () => {
+      const item = {
+        offset: 2,
+        path: ["Indonesia"],
+        value: "Indonesia",
+      } as unknown as HeaderItem;
+
+      const pivoted = {
+        // single column group -> one section with both measures
+        getRowSection: (_col: number, rowIndex: number) =>
+          rowIndex === 2
+            ? [
+                { value: "1,234" } as HeaderItem,
+                { value: "$5,678" } as HeaderItem,
+              ]
+            : [],
+        columnCount: 1,
+        valueIndexes: [1, 2],
+        rowIndexes: [0],
+        columnsWithoutPivotGroup,
+      };
+
+      expect(getRowDataForCustomAction(item, pivoted, getColumnTitle)).toEqual({
+        country: "Indonesia",
+        new_users: "1,234",
+        revenue: "$5,678",
+      });
+    });
+
+    it("falls back to the formatted display value when there is no path", () => {
+      const item = {
+        offset: 0,
+        path: [],
+        value: "Total",
+      } as unknown as HeaderItem;
+
+      const pivoted = {
+        getRowSection: () => [{ value: "9" } as HeaderItem],
+        columnCount: 1,
+        valueIndexes: [1],
+        rowIndexes: [0],
+        columnsWithoutPivotGroup,
+      };
+
+      expect(getRowDataForCustomAction(item, pivoted, getColumnTitle)).toEqual({
+        country: "Total",
+        new_users: "9",
+      });
+    });
+  });
+
+  describe("getActivePivotFilters", () => {
+    it("reads applied parameters from json_query.parameters", () => {
+      const rawSeries = [
+        {
+          json_query: {
+            parameters: [
+              { name: "Date", slug: "date", value: "2026-01-01~2026-01-31" },
+              { name: "Region", slug: "region", value: "APAC" },
+            ],
+          },
+        },
+      ] as any;
+
+      expect(getActivePivotFilters(rawSeries)).toEqual({
+        Date: "2026-01-01~2026-01-31",
+        Region: "APAC",
+      });
+    });
+
+    it("skips parameters without a value and falls back to slug for the key", () => {
+      const rawSeries = [
+        {
+          json_query: {
+            parameters: [
+              { slug: "region", value: "APAC" },
+              { name: "Unset", slug: "unset", value: null },
+            ],
+          },
+        },
+      ] as any;
+
+      expect(getActivePivotFilters(rawSeries)).toEqual({ region: "APAC" });
+    });
+
+    it("returns an empty object when there are no parameters", () => {
+      expect(getActivePivotFilters(undefined)).toEqual({});
+      expect(getActivePivotFilters([{}] as any)).toEqual({});
     });
   });
 });
