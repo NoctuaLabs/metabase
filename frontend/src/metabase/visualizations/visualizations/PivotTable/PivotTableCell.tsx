@@ -25,6 +25,7 @@ interface CellProps {
   isTransparent?: boolean;
   hasTopBorder?: boolean;
   onClick?: ((e: React.MouseEvent) => void) | undefined;
+  onContextMenu?: ((e: React.MouseEvent) => void) | undefined;
   onResize?: (newWidth: number) => void;
   showTooltip?: boolean;
 }
@@ -88,6 +89,7 @@ export function Cell({
   isTransparent,
   hasTopBorder,
   onClick,
+  onContextMenu,
   onResize,
   showTooltip = true,
 }: CellProps) {
@@ -111,6 +113,7 @@ export function Cell({
           : {}),
       }}
       onClick={onClick}
+      onContextMenu={onContextMenu}
     >
       <>
         <div
@@ -176,6 +179,7 @@ type LeftHeaderCellProps = TopHeaderCellProps & {
   settings: VisualizationSettings;
   onUpdateVisualizationSettings: (settings: VisualizationSettings) => void;
   isNativeQuery?: boolean;
+  onCustomActionContextMenu?: (e: React.MouseEvent, item: HeaderItem) => void;
 };
 
 export const LeftHeaderCell = ({
@@ -187,6 +191,7 @@ export const LeftHeaderCell = ({
   onUpdateVisualizationSettings,
   onResize,
   isNativeQuery,
+  onCustomActionContextMenu,
 }: LeftHeaderCellProps) => {
   const { value, isSubtotal, hasSubtotal, depth, path, clicked, span } = item;
 
@@ -211,6 +216,14 @@ export const LeftHeaderCell = ({
         }
       : getCellClickHandler(clicked);
 
+  // The custom action is offered on first-column (depth 0) data rows only —
+  // not subtotal / grand-total rows.
+  const canCustomAction =
+    onCustomActionContextMenu != null &&
+    depth === 0 &&
+    !item.isSubtotal &&
+    !item.isGrandTotal;
+
   return (
     <Cell
       style={{
@@ -223,6 +236,9 @@ export const LeftHeaderCell = ({
       isBold={isSubtotal}
       onClick={handleClick}
       onResize={onResize}
+      onContextMenu={
+        canCustomAction ? (e) => onCustomActionContextMenu(e, item) : undefined
+      }
     />
   );
 };

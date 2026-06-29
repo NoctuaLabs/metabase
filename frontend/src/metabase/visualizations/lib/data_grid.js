@@ -164,6 +164,13 @@ export const SHOW_HIDDEN_COLUMNS_SETTING = "pivot.show_hidden_columns";
 // aggregated totals, instead of the default sum / weighted-mean.
 export const COLUMN_TOTAL_FORMULA = "pivot.total_formula";
 
+// "Custom Action" feature: a user-defined action exposed via right-click on a
+// first-column row cell. CUSTOM_ACTION_NAME_SETTING is the menu label (e.g.
+// "Predict"); CUSTOM_ACTION_URL_SETTING is the POST URL the row's data is sent
+// to (proxied through the backend, which renders the returned HTML in a modal).
+export const CUSTOM_ACTION_NAME_SETTING = "pivot.custom_action_name";
+export const CUSTOM_ACTION_URL_SETTING = "pivot.custom_action_url";
+
 // Reads each value column's custom total formula (COLUMN_TOTAL_FORMULA) into a
 // map of { columnName: formulaString } for the non-empty ones. `getColumnSetting`
 // is (col) => columnSettings. Returns {} when nothing is configured.

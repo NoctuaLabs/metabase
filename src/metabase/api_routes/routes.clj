@@ -41,6 +41,7 @@
    [metabase.native-query-snippets.api]
    [metabase.notification.api]
    [metabase.permissions-rest.api]
+   [metabase.pivot-action.api]
    [metabase.premium-features.api]
    [metabase.product-feedback.api]
    [metabase.public-sharing-rest.api]
@@ -99,6 +100,7 @@
          metabase.model-persistence.api/keep-me
          metabase.native-query-snippets.api/keep-me
          metabase.permissions-rest.api/keep-me
+         metabase.pivot-action.api/keep-me
          metabase.product-feedback.api/keep-me
          metabase.public-sharing-rest.api/keep-me
          metabase.query-processor.api/keep-me
@@ -199,6 +201,7 @@
    "/notify"               (+static-apikey metabase.sync.api/notify-routes)
    "/permissions"          (+auth 'metabase.permissions-rest.api)
    "/persist"              (+auth 'metabase.model-persistence.api)
+   "/pivot-action"         (+auth 'metabase.pivot-action.api)
    "/premium-features"     (+auth metabase.premium-features.api/routes)
    "/preview_embed"        (+auth metabase.embedding-rest.api/preview-embedding-routes)
    "/product-feedback"     'metabase.product-feedback.api

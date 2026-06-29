@@ -57,6 +57,7 @@ import type {
 import { migratePivotColumnSplitSetting } from "metabase-lib/v1/queries/utils/pivot";
 import type { VisualizationSettings } from "metabase-types/api";
 
+import { CustomActionOverlays } from "./CustomActionOverlays";
 import {
   PivotTableRoot,
   PivotTableTopLeftCellsContainer,
@@ -84,7 +85,8 @@ import {
   getTitleForColumn,
   settings,
 } from "./settings";
-import type { HeaderWidthType, PivotTableClicked } from "./types";
+import type { HeaderItem, HeaderWidthType, PivotTableClicked } from "./types";
+import { useCustomAction } from "./useCustomAction";
 import {
   checkRenderable,
   getCellWidthsForSection,
@@ -119,6 +121,7 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
   function PivotTableInner(
     {
       data,
+      rawSeries,
       settings,
       width,
       height,
@@ -138,6 +141,14 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
     // the main thread for a noticeable moment on large datasets.
     const [isRecomputing, setIsRecomputing] = useState(false);
     const columnWidthSettings = settings["pivot_table.column_widths"];
+
+    // "Custom Action" feature. When an action name + POST URL are configured,
+    // right-clicking a first-column row cell opens a one-item menu; clicking it
+    // sends the row's visible cells + active filters to the URL (proxied through
+    // the backend) and renders the returned HTML in a modal. See useCustomAction.
+    const customAction = useCustomAction(settings, rawSeries, (column) =>
+      getTitleForColumn(column, settings),
+    );
 
     const theme = useMantineTheme();
 
@@ -745,6 +756,16 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
         });
     }
 
+    // Bind the clicked row's pivot model into the hook's run handler.
+    const handleRunCustomAction = (item: HeaderItem) =>
+      customAction.run(item, {
+        getRowSection,
+        columnCount,
+        valueIndexes,
+        rowIndexes,
+        columnsWithoutPivotGroup,
+      });
+
     return (
       <DndContext modifiers={[restrictToHorizontalAxis]}>
         <PivotTableRoot
@@ -966,6 +987,11 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
                               settings={settings}
                               getCellClickHandler={getCellClickHandler}
                               isNativeQuery={isNativePivotData(data.cols)}
+                              onCustomActionContextMenu={
+                                customAction.enabled
+                                  ? customAction.openMenu
+                                  : undefined
+                              }
                             />
                           )}
                           cellSizeAndPositionGetter={({ index }) =>
@@ -1042,6 +1068,14 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
             )}
           </div>
         </PivotTableRoot>
+        <CustomActionOverlays
+          actionName={customAction.actionName}
+          menu={customAction.menu}
+          result={customAction.result}
+          onCloseMenu={customAction.closeMenu}
+          onCloseResult={customAction.closeResult}
+          onRun={handleRunCustomAction}
+        />
       </DndContext>
     );
   },

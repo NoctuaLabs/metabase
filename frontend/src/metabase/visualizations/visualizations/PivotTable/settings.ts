@@ -16,6 +16,8 @@ import {
   COLUMN_SORT_ORDER_DESC,
   COLUMN_SPLIT_SETTING,
   COLUMN_TOTAL_FORMULA,
+  CUSTOM_ACTION_NAME_SETTING,
+  CUSTOM_ACTION_URL_SETTING,
   HEATMAP_MODE_SETTING,
   SHOW_HIDDEN_COLUMNS_SETTING,
   getBreakdownOptions,
@@ -407,6 +409,34 @@ export const settings = {
     },
     getHidden: ([{ data }]: [{ data: DatasetData }]) =>
       !data?.cols.some((col) => isFormattablePivotColumn(col)),
+  },
+  [CUSTOM_ACTION_NAME_SETTING]: {
+    get section() {
+      return t`Custom Action`;
+    },
+    get title() {
+      return t`Action name`;
+    },
+    get hint() {
+      return t`Label for the right-click action on the first column, e.g. "Predict". Leave blank to disable.`;
+    },
+    widget: "input",
+    getProps: () => ({ placeholder: t`e.g. Predict` }),
+    getDefault: () => "",
+  },
+  [CUSTOM_ACTION_URL_SETTING]: {
+    get section() {
+      return t`Custom Action`;
+    },
+    get title() {
+      return t`POST URL`;
+    },
+    get hint() {
+      return t`The service that receives the row's data as a JSON POST and returns HTML to display. The request is proxied through the server, so HTTP (non-HTTPS) URLs are allowed.`;
+    },
+    widget: "input",
+    getProps: () => ({ placeholder: t`e.g. https://example.com/predict` }),
+    getDefault: () => "",
   },
 };
 
