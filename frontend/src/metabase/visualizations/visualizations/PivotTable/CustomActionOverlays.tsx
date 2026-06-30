@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { t } from "ttag";
 
 import { Center, Loader, Menu, Modal, Text } from "metabase/ui";
@@ -37,26 +38,39 @@ export function CustomActionOverlays({
 }: CustomActionOverlaysProps) {
   return (
     <>
-      {menu && (
-        <Menu opened onClose={onCloseMenu} position="bottom-start" withinPortal>
-          <Menu.Target>
-            {/* Zero-size anchor positioned at the cursor so the menu opens
-                where the user right-clicked. */}
-            <div
-              style={{
-                position: "fixed",
-                left: menu.x,
-                top: menu.y,
-                width: 0,
-                height: 0,
-              }}
-            />
-          </Menu.Target>
-          <Menu.Dropdown>
-            <Menu.Item onClick={() => onRun(menu.item)}>{actionName}</Menu.Item>
-          </Menu.Dropdown>
-        </Menu>
-      )}
+      {menu &&
+        // Render the menu through a body-level portal with a zero-size anchor at
+        // the exact cursor position. Portaling to document.body (rather than
+        // inline) keeps `position: fixed` relative to the viewport — the pivot
+        // table lives inside transformed/scrolled containers, which would
+        // otherwise shift a fixed anchor away from the click point.
+        createPortal(
+          <Menu
+            opened
+            onClose={onCloseMenu}
+            position="bottom-start"
+            offset={0}
+            withinPortal
+          >
+            <Menu.Target>
+              <div
+                style={{
+                  position: "fixed",
+                  left: menu.x,
+                  top: menu.y,
+                  width: 0,
+                  height: 0,
+                }}
+              />
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item onClick={() => onRun(menu.item)}>
+                {actionName}
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>,
+          document.body,
+        )}
       <Modal
         opened={result.open}
         onClose={onCloseResult}
