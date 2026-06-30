@@ -6,6 +6,7 @@ import {
   CUSTOM_ACTION_NAME_SETTING,
   CUSTOM_ACTION_URL_SETTING,
 } from "metabase/visualizations/lib/data_grid";
+import type { UiParameter } from "metabase-lib/v1/parameters/types";
 import type {
   DatasetColumn,
   Series,
@@ -48,6 +49,7 @@ const CLOSED_RESULT: ActionResultState = {
 export function useCustomAction(
   settings: VisualizationSettings,
   rawSeries: Series | undefined | null,
+  dashboardParameters: UiParameter[] | undefined,
   getColumnTitle: (column: DatasetColumn) => string,
 ) {
   const actionName = (
@@ -80,7 +82,7 @@ export function useCustomAction(
       setMenu(null);
       setResult({ open: true, loading: true, html: null, error: null });
       const row = getRowDataForCustomAction(item, pivoted, getColumnTitle);
-      const filters = getActivePivotFilters(rawSeries);
+      const filters = getActivePivotFilters(rawSeries, dashboardParameters);
       try {
         const html: string = await PivotActionApi.proxy({
           url: actionUrl,
@@ -95,7 +97,7 @@ export function useCustomAction(
         setResult({ open: true, loading: false, html: null, error: message });
       }
     },
-    [actionUrl, rawSeries, getColumnTitle],
+    [actionUrl, rawSeries, dashboardParameters, getColumnTitle],
   );
 
   return {
