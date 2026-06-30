@@ -183,22 +183,43 @@ export function getRowDataForCustomAction(
 
 type AppliedParameter = { name?: string; slug?: string; value?: unknown };
 
+// The relevant shape of the object returned by the visualization's
+// `getExtraDataForClick(null)` (see metabase/dashboard/hooks/use-click-behavior-data).
+type ClickExtraData = {
+  parameters?: AppliedParameter[];
+  parameterValuesBySlug?: Record<string, unknown>;
+};
+
 // Collects the filters currently applied to the pivot, as a `{ name | slug:
 // value }` map (parameters without a value are skipped).
 //
-// On a dashboard, the live filter values live in the dashboard Redux state, not
-// on the card's series — so `dashboardParameters` (the value-populated dashboard
-// parameters, passed in from `mapStateToProps`) is the authoritative source and
-// is preferred. In the query builder there is no dashboard, so we fall back to
-// the parameters carried on the series (`json_query.parameters`, then
-// `data.parameters`).
+// On a dashboard the live filter values live in the dashboard Redux state, not on
+// the card's series. `extraData` comes from the viz's `getExtraDataForClick(null)`
+// prop, which the dashboard wires to the store and reads at call time — so it
+// reflects the currently-applied dashboard filters. We prefer its `parameters`
+// (which carry display names + values), then its slug→value map, and finally fall
+// back to the parameters carried on the series (`json_query.parameters`, then
+// `data.parameters`) for the query-builder case where there is no dashboard.
 export function getActivePivotFilters(
   rawSeries: Series | undefined | null,
-  dashboardParameters?: AppliedParameter[],
+  extraData?: ClickExtraData | Record<string, unknown> | null,
 ): Record<string, unknown> {
-  const fromDashboard = collectParameterValues(dashboardParameters ?? []);
-  if (Object.keys(fromDashboard).length > 0) {
-    return fromDashboard;
+  const extra = (extraData ?? {}) as ClickExtraData;
+
+  const fromParameters = collectParameterValues(extra.parameters ?? []);
+  if (Object.keys(fromParameters).length > 0) {
+    return fromParameters;
+  }
+
+  const bySlug = extra.parameterValuesBySlug ?? {};
+  const fromSlugMap: Record<string, unknown> = {};
+  for (const [slug, value] of Object.entries(bySlug)) {
+    if (value != null) {
+      fromSlugMap[slug] = value;
+    }
+  }
+  if (Object.keys(fromSlugMap).length > 0) {
+    return fromSlugMap;
   }
 
   const first = rawSeries?.[0] as

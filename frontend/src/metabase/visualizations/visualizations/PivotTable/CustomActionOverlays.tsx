@@ -1,15 +1,23 @@
+import { createPortal } from "react-dom";
 import { t } from "ttag";
 
 import { Center, Loader, Menu, Modal, Text } from "metabase/ui";
 
+import {
+  RetentionProjection,
+  type RetentionProjectionData,
+} from "./RetentionProjection";
 import type { HeaderItem } from "./types";
+import type { CustomActionRenderMode } from "./useCustomAction";
 
 type ActionMenuState = { x: number; y: number; item: HeaderItem } | null;
 
 type ActionResultState = {
   open: boolean;
   loading: boolean;
+  mode: CustomActionRenderMode;
   html: string | null;
+  projection: RetentionProjectionData | null;
   error: string | null;
 };
 
@@ -37,31 +45,55 @@ export function CustomActionOverlays({
 }: CustomActionOverlaysProps) {
   return (
     <>
-      {menu && (
-        <Menu opened onClose={onCloseMenu} position="bottom-start" withinPortal>
-          <Menu.Target>
-            {/* Zero-size anchor positioned at the cursor so the menu opens
-                where the user right-clicked. */}
-            <div
-              style={{
-                position: "fixed",
-                left: menu.x,
-                top: menu.y,
-                width: 0,
-                height: 0,
-              }}
-            />
-          </Menu.Target>
-          <Menu.Dropdown>
-            <Menu.Item onClick={() => onRun(menu.item)}>{actionName}</Menu.Item>
-          </Menu.Dropdown>
-        </Menu>
-      )}
+      {menu &&
+        // Render the menu through a body-level portal with a zero-size anchor at
+        // the exact cursor position. Portaling to document.body (rather than
+        // inline) keeps `position: fixed` relative to the viewport — the pivot
+        // table lives inside transformed/scrolled containers, which would
+        // otherwise shift a fixed anchor away from the click point.
+        createPortal(
+          <Menu
+            opened
+            onClose={onCloseMenu}
+            position="bottom-start"
+            offset={0}
+            withinPortal
+          >
+            <Menu.Target>
+              <div
+                style={{
+                  position: "fixed",
+                  left: menu.x,
+                  top: menu.y,
+                  width: 0,
+                  height: 0,
+                }}
+              />
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item onClick={() => onRun(menu.item)}>
+                {actionName}
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>,
+          document.body,
+        )}
       <Modal
         opened={result.open}
         onClose={onCloseResult}
         title={actionName || t`Custom action`}
-        size="lg"
+        // Near-fullscreen: leave ~30px of margin around the modal on every side
+        // so large HTML results have room. The body fills the remaining height
+        // and scrolls.
+        size="calc(100vw - 60px)"
+        styles={{
+          content: {
+            height: "calc(100vh - 60px)",
+            display: "flex",
+            flexDirection: "column",
+          },
+          body: { flex: 1, overflow: "auto" },
+        }}
         data-testid="pivot-custom-action-modal"
       >
         <CustomActionResult result={result} />
@@ -80,6 +112,11 @@ function CustomActionResult({ result }: { result: ActionResultState }) {
   }
   if (result.error) {
     return <Text c="error">{result.error}</Text>;
+  }
+  if (result.mode === "retention_projection") {
+    return result.projection ? (
+      <RetentionProjection data={result.projection} />
+    ) : null;
   }
   // The action service is trusted to return display-ready HTML.
   return <div dangerouslySetInnerHTML={{ __html: result.html ?? "" }} />;
