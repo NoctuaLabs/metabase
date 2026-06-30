@@ -6,7 +6,7 @@ import {
   CUSTOM_ACTION_NAME_SETTING,
   CUSTOM_ACTION_URL_SETTING,
 } from "metabase/visualizations/lib/data_grid";
-import type { UiParameter } from "metabase-lib/v1/parameters/types";
+import type { ClickObject } from "metabase/visualizations/types";
 import type {
   DatasetColumn,
   Series,
@@ -15,6 +15,12 @@ import type {
 
 import type { HeaderItem } from "./types";
 import { getActivePivotFilters, getRowDataForCustomAction } from "./utils";
+
+// Matches the `getExtraDataForClick` prop from VisualizationProps. On a dashboard
+// it returns the live applied filter values; off-dashboard it defaults to {}.
+type GetExtraDataForClick = (
+  clicked: ClickObject | null,
+) => Record<string, unknown>;
 
 type PivotedRowSource = {
   getRowSection: (colIndex: number, rowIndex: number) => HeaderItem[];
@@ -49,7 +55,7 @@ const CLOSED_RESULT: ActionResultState = {
 export function useCustomAction(
   settings: VisualizationSettings,
   rawSeries: Series | undefined | null,
-  dashboardParameters: UiParameter[] | undefined,
+  getExtraDataForClick: GetExtraDataForClick | undefined,
   getColumnTitle: (column: DatasetColumn) => string,
 ) {
   const actionName = (
@@ -82,7 +88,10 @@ export function useCustomAction(
       setMenu(null);
       setResult({ open: true, loading: true, html: null, error: null });
       const row = getRowDataForCustomAction(item, pivoted, getColumnTitle);
-      const filters = getActivePivotFilters(rawSeries, dashboardParameters);
+      // Read live dashboard filter values at click time via getExtraDataForClick
+      // (returns {} off-dashboard), falling back to the series parameters.
+      const extraData = getExtraDataForClick?.(null);
+      const filters = getActivePivotFilters(rawSeries, extraData);
       try {
         const html: string = await PivotActionApi.proxy({
           url: actionUrl,
@@ -97,7 +106,7 @@ export function useCustomAction(
         setResult({ open: true, loading: false, html: null, error: message });
       }
     },
-    [actionUrl, rawSeries, dashboardParameters, getColumnTitle],
+    [actionUrl, rawSeries, getExtraDataForClick, getColumnTitle],
   );
 
   return {

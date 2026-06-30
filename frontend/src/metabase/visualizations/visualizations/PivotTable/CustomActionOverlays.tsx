@@ -61,7 +61,18 @@ export function CustomActionOverlays({
         opened={result.open}
         onClose={onCloseResult}
         title={actionName || t`Custom action`}
-        size="lg"
+        // Near-fullscreen: leave ~30px of margin around the modal on every side
+        // so large HTML results have room. The body fills the remaining height
+        // and scrolls.
+        size="calc(100vw - 60px)"
+        styles={{
+          content: {
+            height: "calc(100vh - 60px)",
+            display: "flex",
+            flexDirection: "column",
+          },
+          body: { flex: 1, overflow: "auto" },
+        }}
         data-testid="pivot-custom-action-modal"
       >
         <CustomActionResult result={result} />

@@ -513,7 +513,7 @@ describe("Visualizations > Visualizations > PivotTable > utils", () => {
       expect(getActivePivotFilters([{}] as any)).toEqual({});
     });
 
-    it("prefers dashboard parameters over the series parameters", () => {
+    it("prefers extraData.parameters (dashboard) over the series parameters", () => {
       const rawSeries = [
         {
           json_query: {
@@ -521,17 +521,30 @@ describe("Visualizations > Visualizations > PivotTable > utils", () => {
           },
         },
       ] as any;
-      const dashboardParameters = [
-        { name: "Game", slug: "game", value: "Hamster Jump" },
-        { name: "Empty", slug: "empty", value: null },
-      ] as any;
+      const extraData = {
+        parameters: [
+          { name: "Game", slug: "game", value: "Hamster Jump" },
+          { name: "Empty", slug: "empty", value: null },
+        ],
+      } as any;
 
-      expect(getActivePivotFilters(rawSeries, dashboardParameters)).toEqual({
+      expect(getActivePivotFilters(rawSeries, extraData)).toEqual({
         Game: "Hamster Jump",
       });
     });
 
-    it("falls back to series parameters when dashboard parameters have no values", () => {
+    it("uses extraData.parameterValuesBySlug when parameters carry no values", () => {
+      const extraData = {
+        parameters: [{ name: "Game", slug: "game", value: null }],
+        parameterValuesBySlug: { game: "Hamster Jump", empty: null },
+      } as any;
+
+      expect(getActivePivotFilters(undefined, extraData)).toEqual({
+        game: "Hamster Jump",
+      });
+    });
+
+    it("falls back to series parameters when extraData has no values", () => {
       const rawSeries = [
         {
           json_query: {
@@ -539,11 +552,12 @@ describe("Visualizations > Visualizations > PivotTable > utils", () => {
           },
         },
       ] as any;
-      const dashboardParameters = [
-        { name: "Unset", slug: "unset", value: null },
-      ] as any;
+      const extraData = {
+        parameters: [{ name: "Unset", slug: "unset", value: null }],
+        parameterValuesBySlug: {},
+      } as any;
 
-      expect(getActivePivotFilters(rawSeries, dashboardParameters)).toEqual({
+      expect(getActivePivotFilters(rawSeries, extraData)).toEqual({
         FromSeries: "series",
       });
     });
