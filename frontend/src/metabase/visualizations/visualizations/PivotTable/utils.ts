@@ -181,26 +181,40 @@ export function getRowDataForCustomAction(
   return row;
 }
 
-// Collects the parameters actually applied to the query run that produced this
-// series, as a `{ name | slug: value }` map. Reads from the series/question
-// layer (`json_query.parameters`, falling back to `data.parameters`) so it works
-// identically in the query builder and on a dashboard, with no Redux wiring.
-// Parameters without a value are skipped.
+type AppliedParameter = { name?: string; slug?: string; value?: unknown };
+
+// Collects the filters currently applied to the pivot, as a `{ name | slug:
+// value }` map (parameters without a value are skipped).
+//
+// On a dashboard, the live filter values live in the dashboard Redux state, not
+// on the card's series — so `dashboardParameters` (the value-populated dashboard
+// parameters, passed in from `mapStateToProps`) is the authoritative source and
+// is preferred. In the query builder there is no dashboard, so we fall back to
+// the parameters carried on the series (`json_query.parameters`, then
+// `data.parameters`).
 export function getActivePivotFilters(
   rawSeries: Series | undefined | null,
+  dashboardParameters?: AppliedParameter[],
 ): Record<string, unknown> {
+  const fromDashboard = collectParameterValues(dashboardParameters ?? []);
+  if (Object.keys(fromDashboard).length > 0) {
+    return fromDashboard;
+  }
+
   const first = rawSeries?.[0] as
     | {
-        data?: {
-          parameters?: { name?: string; slug?: string; value?: unknown }[];
-        };
-        json_query?: {
-          parameters?: { name?: string; slug?: string; value?: unknown }[];
-        };
+        data?: { parameters?: AppliedParameter[] };
+        json_query?: { parameters?: AppliedParameter[] };
       }
     | undefined;
-  const parameters =
+  const seriesParameters =
     first?.json_query?.parameters ?? first?.data?.parameters ?? [];
+  return collectParameterValues(seriesParameters);
+}
+
+function collectParameterValues(
+  parameters: AppliedParameter[],
+): Record<string, unknown> {
   const filters: Record<string, unknown> = {};
   for (const param of parameters) {
     if (param == null || param.value == null) {
