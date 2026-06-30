@@ -22,18 +22,23 @@
           (is (re-find #"Indonesia" (get-in @captured [:opts :body]))))))))
 
 (deftest proxy-maps-non-2xx-to-400-test
-  (testing "a non-2xx response from the service becomes a 400"
-    (with-redefs [http/post (fn [_ _] {:status 502 :body "bad gateway"})]
-      (mt/user-http-request :rasta :post 400 "pivot-action/proxy"
-                            {:url "http://example.com/predict"
-                             :payload {:row {}}}))))
+  (testing "a non-2xx response from the service becomes a 400 that echoes the upstream status and body"
+    (with-redefs [http/post (fn [_ _] {:status 500 :body "boom: NullPointerException at line 42"})]
+      ;; defendpoint returns the ex-message as the (string) response body for a 400.
+      (let [message (mt/user-http-request :rasta :post 400 "pivot-action/proxy"
+                                          {:url "http://example.com/predict"
+                                           :payload {:row {}}})]
+        (is (string? message))
+        (is (re-find #"500" message))
+        (is (re-find #"NullPointerException" message))))))
 
 (deftest proxy-maps-connection-error-to-400-test
-  (testing "a thrown connection error becomes a 400"
-    (with-redefs [http/post (fn [_ _] (throw (java.net.ConnectException. "refused")))]
-      (mt/user-http-request :rasta :post 400 "pivot-action/proxy"
-                            {:url "http://example.com/predict"
-                             :payload {:row {}}}))))
+  (testing "a thrown connection error becomes a 400 that includes the exception message"
+    (with-redefs [http/post (fn [_ _] (throw (java.net.ConnectException. "Connection refused")))]
+      (let [message (mt/user-http-request :rasta :post 400 "pivot-action/proxy"
+                                          {:url "http://example.com/predict"
+                                           :payload {:row {}}})]
+        (is (re-find #"Connection refused" message))))))
 
 (deftest proxy-requires-url-test
   (testing "a blank url is rejected by the schema"

@@ -111,7 +111,21 @@ function CustomActionResult({ result }: { result: ActionResultState }) {
     );
   }
   if (result.error) {
-    return <Text c="error">{result.error}</Text>;
+    return (
+      <Text
+        c="error"
+        component="pre"
+        style={{
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          margin: 0,
+          fontFamily: "var(--mb-default-monospace-font-family, monospace)",
+        }}
+        data-testid="pivot-custom-action-error"
+      >
+        {result.error}
+      </Text>
+    );
   }
   if (result.mode === "retention_projection") {
     return result.projection ? (
