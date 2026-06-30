@@ -3,14 +3,21 @@ import { t } from "ttag";
 
 import { Center, Loader, Menu, Modal, Text } from "metabase/ui";
 
+import {
+  RetentionProjection,
+  type RetentionProjectionData,
+} from "./RetentionProjection";
 import type { HeaderItem } from "./types";
+import type { CustomActionRenderMode } from "./useCustomAction";
 
 type ActionMenuState = { x: number; y: number; item: HeaderItem } | null;
 
 type ActionResultState = {
   open: boolean;
   loading: boolean;
+  mode: CustomActionRenderMode;
   html: string | null;
+  projection: RetentionProjectionData | null;
   error: string | null;
 };
 
@@ -105,6 +112,11 @@ function CustomActionResult({ result }: { result: ActionResultState }) {
   }
   if (result.error) {
     return <Text c="error">{result.error}</Text>;
+  }
+  if (result.mode === "retention_projection") {
+    return result.projection ? (
+      <RetentionProjection data={result.projection} />
+    ) : null;
   }
   // The action service is trusted to return display-ready HTML.
   return <div dangerouslySetInnerHTML={{ __html: result.html ?? "" }} />;

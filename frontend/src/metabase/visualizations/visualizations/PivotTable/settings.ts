@@ -17,6 +17,7 @@ import {
   COLUMN_SPLIT_SETTING,
   COLUMN_TOTAL_FORMULA,
   CUSTOM_ACTION_NAME_SETTING,
+  CUSTOM_ACTION_RENDER_MODE_SETTING,
   CUSTOM_ACTION_URL_SETTING,
   HEATMAP_MODE_SETTING,
   SHOW_HIDDEN_COLUMNS_SETTING,
@@ -437,6 +438,25 @@ export const settings = {
     widget: "input",
     getProps: () => ({ placeholder: t`e.g. https://example.com/predict` }),
     getDefault: () => "",
+  },
+  [CUSTOM_ACTION_RENDER_MODE_SETTING]: {
+    get section() {
+      return t`Custom Action`;
+    },
+    get title() {
+      return t`Render mode`;
+    },
+    get hint() {
+      return t`How to render the service's response: HTML renders the response directly; Retention projection parses a JSON response and renders it as a retention report.`;
+    },
+    widget: "select",
+    getDefault: () => "html",
+    getProps: () => ({
+      options: [
+        { name: t`HTML`, value: "html" },
+        { name: t`Retention projection`, value: "retention_projection" },
+      ],
+    }),
   },
 };
 

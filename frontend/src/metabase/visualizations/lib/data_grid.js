@@ -170,6 +170,11 @@ export const COLUMN_TOTAL_FORMULA = "pivot.total_formula";
 // to (proxied through the backend, which renders the returned HTML in a modal).
 export const CUSTOM_ACTION_NAME_SETTING = "pivot.custom_action_name";
 export const CUSTOM_ACTION_URL_SETTING = "pivot.custom_action_url";
+// How to render the action service's response: "html" (default) renders the
+// returned HTML as-is; "retention_projection" expects a JSON body and renders it
+// as a retention-projection report (milestones table + log-scale curve).
+export const CUSTOM_ACTION_RENDER_MODE_SETTING =
+  "pivot.custom_action_render_mode";
 
 // Reads each value column's custom total formula (COLUMN_TOTAL_FORMULA) into a
 // map of { columnName: formulaString } for the non-empty ones. `getColumnSetting`
