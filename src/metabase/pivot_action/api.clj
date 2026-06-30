@@ -17,9 +17,16 @@
 
 (def ^:private timeout-ms 15000)
 
+(def ^:private max-error-body-length
+  "Cap on how much of the upstream error body we echo back, to avoid returning an
+  unbounded response in an error message."
+  4000)
+
 (defn- post-to-action-service
   "POSTs `payload` (a map) as JSON to `url` and returns the response body string when the service
-  answers with a 2xx status. Throws a 400 ex-info otherwise."
+  answers with a 2xx status. On a non-2xx response or a connection failure, throws a 400 ex-info
+  whose message includes the upstream status and (truncated) response body / exception message, so
+  the frontend can surface the raw error from the service."
   [url payload]
   (let [resp (try
                (http/post url {:body               (json/encode payload)
@@ -29,12 +36,16 @@
                                :socket-timeout     timeout-ms
                                :connection-timeout timeout-ms
                                :throw-exceptions   false})
-               (catch Throwable _
-                 (throw (ex-info (tru "Custom action request failed") {:status-code 400}))))]
+               (catch Throwable e
+                 (throw (ex-info (tru "Custom action request failed: {0}" (ex-message e))
+                                 {:status-code 400}))))]
     (if (<= 200 (:status resp) 299)
       (:body resp)
-      (throw (ex-info (tru "Custom action service returned status {0}" (:status resp))
-                      {:status-code 400})))))
+      (let [body (some-> (:body resp) str (subs 0 (min max-error-body-length (count (str (:body resp))))))]
+        (throw (ex-info (tru "Custom action service returned status {0}: {1}"
+                             (:status resp)
+                             (or (not-empty body) (tru "(no response body)")))
+                        {:status-code 400}))))))
 
 #_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :post "/proxy"

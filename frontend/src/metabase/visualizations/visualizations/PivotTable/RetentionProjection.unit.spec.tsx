@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 
 import { renderWithProviders } from "__support__/ui";
 
@@ -100,5 +100,41 @@ describe("RetentionProjection", () => {
       <RetentionProjection data={{ ...SAMPLE, game: undefined }} />,
     );
     expect(screen.getByText("Retention projection")).toBeInTheDocument();
+  });
+
+  it("shows a cursor tooltip with the nearest point's detail on hover", () => {
+    renderWithProviders(<RetentionProjection data={SAMPLE} />);
+    const svg = screen.getByRole("img", { name: /retention curve/i });
+
+    // jsdom reports a zero-size rect by default; stub a real one so the
+    // pixel→viewBox mapping in the hover handler can run.
+    jest.spyOn(svg, "getBoundingClientRect").mockReturnValue({
+      width: 1040,
+      height: 360,
+      left: 0,
+      top: 0,
+      right: 1040,
+      bottom: 360,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    expect(
+      screen.queryByTestId("retention-curve-tooltip"),
+    ).not.toBeInTheDocument();
+
+    // Move near the far right of the chart -> nearest point is day 120.
+    fireEvent.mouseMove(svg, { clientX: 1010, clientY: 200 });
+
+    const tooltip = screen.getByTestId("retention-curve-tooltip");
+    expect(tooltip).toHaveTextContent("Day 120");
+    expect(tooltip).toHaveTextContent("0.05%");
+    expect(tooltip).toHaveTextContent("Projected");
+
+    fireEvent.mouseLeave(svg);
+    expect(
+      screen.queryByTestId("retention-curve-tooltip"),
+    ).not.toBeInTheDocument();
   });
 });

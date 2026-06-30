@@ -147,15 +147,11 @@ export function useCustomAction(
           });
         }
       } catch (err) {
-        const message =
-          (err as { data?: { message?: string } })?.data?.message ??
-          (err as { message?: string })?.message ??
-          t`The custom action request failed.`;
         setResult({
           ...CLOSED_RESULT,
           open: true,
           mode: renderMode,
-          error: message,
+          error: extractErrorMessage(err),
         });
       }
     },
@@ -172,6 +168,33 @@ export function useCustomAction(
     closeResult,
     run,
   };
+}
+
+// Pulls the most specific error message out of a failed proxy request. The api
+// layer throws `{ status, data }` where `data` is the parsed error body — an
+// object like `{ message }` from the backend, or a raw string. We prefer the raw
+// service message (which the backend now embeds, e.g. "…returned status 500: …")
+// so the user sees what the action service actually said.
+export function extractErrorMessage(err: unknown): string {
+  const fallback = t`The custom action request failed.`;
+  if (err == null) {
+    return fallback;
+  }
+  const data = (err as { data?: unknown }).data;
+  if (typeof data === "string" && data.trim() !== "") {
+    return data;
+  }
+  if (data != null && typeof data === "object") {
+    const msg = (data as { message?: unknown }).message;
+    if (typeof msg === "string" && msg.trim() !== "") {
+      return msg;
+    }
+  }
+  const topMessage = (err as { message?: unknown }).message;
+  if (typeof topMessage === "string" && topMessage.trim() !== "") {
+    return topMessage;
+  }
+  return fallback;
 }
 
 // Normalizes the proxy response into RetentionProjectionData. The api layer
