@@ -512,5 +512,40 @@ describe("Visualizations > Visualizations > PivotTable > utils", () => {
       expect(getActivePivotFilters(undefined)).toEqual({});
       expect(getActivePivotFilters([{}] as any)).toEqual({});
     });
+
+    it("prefers dashboard parameters over the series parameters", () => {
+      const rawSeries = [
+        {
+          json_query: {
+            parameters: [{ name: "FromSeries", slug: "s", value: "series" }],
+          },
+        },
+      ] as any;
+      const dashboardParameters = [
+        { name: "Game", slug: "game", value: "Hamster Jump" },
+        { name: "Empty", slug: "empty", value: null },
+      ] as any;
+
+      expect(getActivePivotFilters(rawSeries, dashboardParameters)).toEqual({
+        Game: "Hamster Jump",
+      });
+    });
+
+    it("falls back to series parameters when dashboard parameters have no values", () => {
+      const rawSeries = [
+        {
+          json_query: {
+            parameters: [{ name: "FromSeries", slug: "s", value: "series" }],
+          },
+        },
+      ] as any;
+      const dashboardParameters = [
+        { name: "Unset", slug: "unset", value: null },
+      ] as any;
+
+      expect(getActivePivotFilters(rawSeries, dashboardParameters)).toEqual({
+        FromSeries: "series",
+      });
+    });
   });
 });

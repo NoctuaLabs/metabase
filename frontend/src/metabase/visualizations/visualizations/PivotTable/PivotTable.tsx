@@ -17,6 +17,7 @@ import _ from "underscore";
 
 import { ExplicitSize } from "metabase/common/components/ExplicitSize";
 import CS from "metabase/css/core/index.css";
+import { getValuePopulatedParameters } from "metabase/dashboard/selectors";
 import { useTranslateContent } from "metabase/i18n/hooks";
 import { connect } from "metabase/redux";
 import type { State } from "metabase/redux/store";
@@ -54,6 +55,7 @@ import type {
   VisualizationDefinition,
   VisualizationProps,
 } from "metabase/visualizations/types";
+import type { UiParameter } from "metabase-lib/v1/parameters/types";
 import { migratePivotColumnSplitSetting } from "metabase-lib/v1/queries/utils/pivot";
 import type { VisualizationSettings } from "metabase-types/api";
 
@@ -101,6 +103,10 @@ const BREAKDOWN_BAR_HEIGHT = 40;
 
 const mapStateToProps = (state: State) => ({
   fontFamily: getSetting(state, "application-font"),
+  // Active dashboard filters (with their current values) for the "Custom Action"
+  // payload. Returns [] when not on a dashboard, so the query-builder path falls
+  // back to the parameters carried on the series. See getActivePivotFilters.
+  dashboardParameters: getValuePopulatedParameters(state),
 });
 
 // The toolbar row is shown when any of its controls is available. Kept as a
@@ -117,7 +123,12 @@ function shouldShowPivotToolbar(flags: {
   return Object.values(flags).some(Boolean);
 }
 
-const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
+// Props injected by `connect(mapStateToProps)` on top of VisualizationProps.
+type PivotTableInnerProps = VisualizationProps & {
+  dashboardParameters?: UiParameter[];
+};
+
+const PivotTableInner = forwardRef<HTMLDivElement, PivotTableInnerProps>(
   function PivotTableInner(
     {
       data,
@@ -130,6 +141,7 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
       fontFamily,
       isEditing,
       onVisualizationClick,
+      dashboardParameters,
     },
     ref,
   ) {
@@ -146,8 +158,11 @@ const PivotTableInner = forwardRef<HTMLDivElement, VisualizationProps>(
     // right-clicking a first-column row cell opens a one-item menu; clicking it
     // sends the row's visible cells + active filters to the URL (proxied through
     // the backend) and renders the returned HTML in a modal. See useCustomAction.
-    const customAction = useCustomAction(settings, rawSeries, (column) =>
-      getTitleForColumn(column, settings),
+    const customAction = useCustomAction(
+      settings,
+      rawSeries,
+      dashboardParameters,
+      (column) => getTitleForColumn(column, settings),
     );
 
     const theme = useMantineTheme();
