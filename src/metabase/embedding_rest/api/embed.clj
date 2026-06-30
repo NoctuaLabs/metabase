@@ -21,7 +21,9 @@
    [metabase.eid-translation.core :as eid-translation]
    [metabase.embedding-rest.api.common :as api.embed.common]
    [metabase.embedding.jwt :as embedding.jwt]
+   [metabase.embedding.validation :as embedding.validation]
    [metabase.events.core :as events]
+   [metabase.pivot-action.api :as pivot-action.api]
    [metabase.query-processor.card :as qp.card]
    [metabase.query-processor.middleware.constraints :as qp.constraints]
    [metabase.query-processor.pivot :as qp.pivot]
@@ -433,3 +435,15 @@
     (api.embed.common/check-embedding-enabled-for-dashboard dashboard-id)
     (request/as-admin
       (api.tiles/process-tiles-query-for-dashcard dashboard-id dashcard-id card-id parameters zoom x y lat-field lon-field))))
+
+#_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
+(api.macros/defendpoint :post "/pivot-action/proxy"
+  "Embed equivalent of `POST /api/pivot-action/proxy`. Proxies a pivot-table custom action so it
+  works inside static/public embeds, where the frontend rewrites `/api/...` requests to
+  `/api/embed/...`. Unauthenticated like the rest of the embed routes; gated on static embedding
+  being enabled. Forwards `payload` to `url` and returns the service's HTML response."
+  [_route-params
+   _query-params
+   {:keys [url payload]} :- pivot-action.api/request-schema]
+  (embedding.validation/check-embedding-enabled)
+  (pivot-action.api/proxy-response url payload))

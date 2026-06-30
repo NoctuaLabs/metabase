@@ -22,11 +22,12 @@
   unbounded response in an error message."
   4000)
 
-(defn- post-to-action-service
+(defn post-to-action-service
   "POSTs `payload` (a map) as JSON to `url` and returns the response body string when the service
   answers with a 2xx status. On a non-2xx response or a connection failure, throws a 400 ex-info
   whose message includes the upstream status and (truncated) response body / exception message, so
-  the frontend can surface the raw error from the service."
+  the frontend can surface the raw error from the service. Shared by the authenticated `/api` and
+  the embed `/api/embed` proxy endpoints."
   [url payload]
   (let [resp (try
                (http/post url {:body               (json/encode payload)
@@ -47,6 +48,20 @@
                              (or (not-empty body) (tru "(no response body)")))
                         {:status-code 400}))))))
 
+(def request-schema
+  "Malli schema for the proxy request body. Shared with the embed endpoint."
+  [:map
+   [:url     ms/NonBlankString]
+   [:payload [:maybe :map]]])
+
+(defn proxy-response
+  "Builds the Ring response for a custom-action proxy request: POST `payload` to `url` and return
+  the service's response as `text/html`. Shared by the authenticated and embed endpoints."
+  [url payload]
+  {:status  200
+   :headers {"Content-Type" "text/html; charset=utf-8"}
+   :body    (post-to-action-service url (or payload {}))})
+
 #_{:clj-kondo/ignore [:metabase/validate-defendpoint-has-response-schema]}
 (api.macros/defendpoint :post "/proxy"
   "Proxy a pivot-table custom action: POST `payload` to `url` and return the HTML the service
@@ -54,9 +69,5 @@
   non-HTTPS services without browser mixed-content / CORS issues."
   [_route-params
    _query-params
-   {:keys [url payload]} :- [:map
-                             [:url     ms/NonBlankString]
-                             [:payload [:maybe :map]]]]
-  {:status  200
-   :headers {"Content-Type" "text/html; charset=utf-8"}
-   :body    (post-to-action-service url (or payload {}))})
+   {:keys [url payload]} :- request-schema]
+  (proxy-response url payload))

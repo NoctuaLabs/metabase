@@ -50,3 +50,23 @@
     (is (= "Unauthenticated"
            (mt/client :post 401 "pivot-action/proxy"
                       {:url "http://example.com/predict" :payload {}})))))
+
+;;; ------------------------------------- embed endpoint -------------------------------------
+;;; Static/public embeds rewrite `/api/...` requests to `/api/embed/...`, so the proxy is also
+;;; exposed (unauthenticated) under `/api/embed/pivot-action/proxy`, gated on static embedding.
+
+(deftest embed-proxy-returns-html-when-embedding-enabled-test
+  (testing "POST /api/embed/pivot-action/proxy works without auth when static embedding is enabled"
+    (mt/with-temporary-setting-values [enable-embedding-static true]
+      (with-redefs [http/post (fn [_ _] {:status 200 :body "<h1>ok</h1>"})]
+        (let [resp (mt/client :post 200 "embed/pivot-action/proxy"
+                              {:url "http://example.com/predict"
+                               :payload {:row {:country "Indonesia"}}})]
+          (is (= "<h1>ok</h1>" (if (map? resp) (:body resp) resp))))))))
+
+(deftest embed-proxy-blocked-when-embedding-disabled-test
+  (testing "the embed endpoint is blocked when static embedding is disabled"
+    (mt/with-temporary-setting-values [enable-embedding-static false]
+      (with-redefs [http/post (fn [_ _] {:status 200 :body "<h1>ok</h1>"})]
+        (mt/client :post 400 "embed/pivot-action/proxy"
+                   {:url "http://example.com/predict" :payload {}})))))
