@@ -216,13 +216,13 @@ export const LeftHeaderCell = ({
         }
       : getCellClickHandler(clicked);
 
-  // The custom action is offered on first-column (depth 0) data rows only —
-  // not subtotal / grand-total rows.
+  // The custom action is offered on any first-column (depth 0) cell — including
+  // collapsible group headers (which may be rendered as subtotal rows when
+  // subtotals are pinned on top), so the user doesn't have to expand a group to
+  // act on it. Only the grand-total row is excluded. Right-clicking a group
+  // sends that group header row's own (aggregated) values.
   const canCustomAction =
-    onCustomActionContextMenu != null &&
-    depth === 0 &&
-    !item.isSubtotal &&
-    !item.isGrandTotal;
+    onCustomActionContextMenu != null && depth === 0 && !item.isGrandTotal;
 
   return (
     <Cell
