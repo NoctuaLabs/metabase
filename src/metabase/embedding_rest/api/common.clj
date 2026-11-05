@@ -187,8 +187,98 @@
                        (not-empty v)
                        v)))))
 
+;;; -------------------------------------- Allowed param values (JWT allowlist) --------------------------------------
+;;
+;; Noctua extension: a signed embed token may carry an `_allowed_param_values` claim, a map of parameter slug -> the
+;; values that parameter may take, e.g.
+;;
+;;   {:resource {:dashboard 6} :params {} :_allowed_param_values {:game ["Arrow Free"]}}
+;;
+;; The parameter stays visible and selectable, but its dropdown only lists the allowed values, any other value is
+;; rejected, and an empty value (which would normally mean "no filter") is replaced with the full allowed set.
+
+(defn allowed-param-values
+  "Return the `_allowed_param_values` claim of `unsigned-token` as a map of keyword slug -> non-empty vector of allowed
+  values. Returns an empty map when the claim is absent."
+  [unsigned-token]
+  (into {}
+        (keep (fn [[slug values]]
+                (let [values (into [] (comp (remove nil?) (distinct)) (u/one-or-many values))]
+                  (when (seq values)
+                    [(keyword (u/qualified-name slug)) values]))))
+        (get unsigned-token :_allowed_param_values)))
+
+(defn- allowed-value?
+  "Is `value` one of `allowed-values`? Compared as strings, since URL query params always arrive as strings."
+  [allowed-values value]
+  (contains? (into #{} (map str) allowed-values) (str value)))
+
+(defn- blank-param-value?
+  [value]
+  (or (nil? value)
+      (and (string? value) (str/blank? value))
+      (and (sequential? value) (empty? value))))
+
+(defn enforce-allowed-param-values
+  "Apply `allowed` (from [[allowed-param-values]]) to `slug->value`, a map of keyword slug -> value. Only slugs in
+  `param-slugs` (the parameters that actually exist on the dashboard or card) are considered. A blank value is
+  replaced with all allowed values; a value outside the allowed set throws a 400."
+  [slug->value allowed param-slugs]
+  (let [param-slugs (into #{} (map (comp keyword u/qualified-name)) param-slugs)]
+    (reduce-kv
+     (fn [acc slug allowed-values]
+       (if-not (contains? param-slugs slug)
+         acc
+         (let [value (get acc slug)]
+           (if (blank-param-value? value)
+             (assoc acc slug allowed-values)
+             (do
+               (doseq [v (u/one-or-many value)]
+                 (api/check (allowed-value? allowed-values v)
+                            [400 (tru "You''re not allowed to use the value {0} for {1}." (pr-str v) (name slug))]))
+               acc)))))
+     slug->value
+     allowed)))
+
+(defn- restrict-parameter-to-allowed-values
+  "Rewrite a dashboard `param` so the frontend only offers `allowed-values`: turn it into a static list and make sure
+  its default is one of them."
+  [param allowed-values]
+  (let [default           (:default param)
+        default-ok?       (and (not (blank-param-value? default))
+                               (every? #(allowed-value? allowed-values %) (u/one-or-many default)))
+        default-sequence? (sequential? default)]
+    (cond-> (assoc param
+                   :values_source_type   :static-list
+                   :values_source_config {:values allowed-values}
+                   :values_query_type    :list)
+      (and (some? default) (not default-ok?))
+      (assoc :default (if default-sequence? [(first allowed-values)] (first allowed-values))))))
+
+(defn- restrict-parameters-to-allowed-values
+  [dashboard-or-card allowed]
+  (if (empty? allowed)
+    dashboard-or-card
+    (update dashboard-or-card :parameters
+            (fn [params]
+              (for [param params]
+                (if-let [allowed-values (get allowed (keyword (:slug param)))]
+                  (restrict-parameter-to-allowed-values param allowed-values)
+                  param))))))
+
+(defn- allowed-values-matching-prefix
+  "Static param values response listing the `allowed-values` that contain `prefix` (case-insensitive)."
+  [allowed-values prefix]
+  {:values          (into []
+                          (comp (filter (fn [v]
+                                          (or (str/blank? prefix)
+                                              (str/includes? (u/lower-case-en (str v)) (u/lower-case-en prefix)))))
+                                (map vector))
+                          allowed-values)
+   :has_more_values false})
+
 (mu/defn- param-values-merged-params :- [:map-of ms/NonBlankString :any]
-  [id->slug slug->id embedding-params token-params id-query-params]
+  [id->slug slug->id embedding-params token-params id-query-params & [allowed]]
   (let [slug-query-params  (into {}
                                  (for [[id v] id-query-params]
                                    [(or (get id->slug (name id))
@@ -199,7 +289,8 @@
                                                          :id-query-params id-query-params})))
                                     v]))
         slug-query-params  (normalize-query-params slug-query-params)
-        merged-slug->value (validate-and-merge-params embedding-params token-params slug-query-params)]
+        merged-slug->value (cond-> (validate-and-merge-params embedding-params token-params slug-query-params)
+                             (seq allowed) (enforce-allowed-param-values allowed (keys slug->id)))]
     (into {} (for [[slug value] merged-slug->value
                    :when        value]
                [(get slug->id (name slug)) value]))))
@@ -310,6 +401,7 @@
         api.public/combine-parameters-and-template-tags
         (remove-token-parameters token-params)
         (remove-locked-and-disabled-params resolved-embedding-params)
+        (restrict-parameters-to-allowed-values (allowed-param-values unsigned-token))
         (assoc :embedding_params resolved-embedding-params))))
 
 (defn- get-embed-card-context
@@ -325,11 +417,15 @@
   "Run the query associated with Card with `card-id` using JWT `token-params`, user-supplied URL `query-params`,
    an `embedding-params` whitelist, and additional query `options`. Returns `StreamingResponse` that should be
   returned as the API endpoint result."
-  [& {:keys [export-format card-id embedding-params token-params query-params qp constraints options]
+  [& {:keys [export-format card-id embedding-params token-params query-params qp constraints options
+             allowed-param-values]
       :or   {qp qp.card/process-query-for-card-default-qp}}]
   {:pre [(integer? card-id) (u/maybe? map? embedding-params) (map? token-params) (map? query-params)]}
-  (let [merged-slug->value (validate-and-merge-params embedding-params token-params (normalize-query-params query-params))
-        parameters         (apply-slug->value (resolve-card-parameters card-id) merged-slug->value)]
+  (let [card-parameters    (resolve-card-parameters card-id)
+        merged-slug->value (cond-> (validate-and-merge-params embedding-params token-params (normalize-query-params query-params))
+                             (seq allowed-param-values)
+                             (enforce-allowed-param-values allowed-param-values (map :slug card-parameters)))
+        parameters         (apply-slug->value card-parameters merged-slug->value)]
     (m/mapply api.public/process-query-for-card-with-id
               card-id export-format parameters
               :context     (get-embed-card-context export-format)
@@ -388,7 +484,8 @@
         (substitute-token-parameters-in-text token-params)
         (remove-locked-parameters embedding-params)
         (remove-token-parameters token-params)
-        (remove-locked-and-disabled-params embedding-params))))
+        (remove-locked-and-disabled-params embedding-params)
+        (restrict-parameters-to-allowed-values (allowed-param-values unsigned-token)))))
 
 (defn- get-embed-dashboard-context
   "If a certain export-format is given, return the correct embedded dashboard context."
@@ -402,12 +499,15 @@
 (defn process-query-for-dashcard
   "Return results for running the query belonging to a DashboardCard. Returns a `StreamingResponse`."
   [& {:keys [dashboard-id dashcard-id card-id export-format embedding-params token-params middleware
-             query-params constraints qp]
+             query-params constraints qp allowed-param-values]
       :or   {constraints (qp.constraints/default-query-constraints)
              qp          qp.card/process-query-for-card-default-qp}}]
   {:pre [(integer? dashboard-id) (integer? dashcard-id) (integer? card-id) (u/maybe? map? embedding-params)
          (map? token-params) (map? query-params)]}
-  (let [slug->value (validate-and-merge-params embedding-params token-params (normalize-query-params query-params))
+  (let [slug->value (cond-> (validate-and-merge-params embedding-params token-params (normalize-query-params query-params))
+                      (seq allowed-param-values)
+                      (enforce-allowed-param-values allowed-param-values
+                                                    (map :slug (t2/select-one-fn :parameters :model/Dashboard :id dashboard-id))))
         parameters  (resolve-dashboard-parameters dashboard-id slug->value)]
     (api.public/process-query-for-dashcard
      :dashboard-id  dashboard-id
@@ -538,7 +638,8 @@
                                                          published-embedding-params)
         id->slug                                       (into {} (map (juxt :id :slug)) parameters)
         slug->id                                       (set/map-invert id->slug)
-        searched-param-slug                            (get id->slug searched-param-id)]
+        searched-param-slug                            (get id->slug searched-param-id)
+        allowed                                        (allowed-param-values unsigned-token)]
     (try
       ;; you can only search for values of a parameter if it is ENABLED and NOT PRESENT in the JWT.
       (when-not (= (get embedding-params (keyword searched-param-slug)) "enabled")
@@ -548,15 +649,19 @@
         (throw (ex-info (tru "You can''t specify a value for {0} if it''s already set in the JWT." (pr-str searched-param-slug))
                         {:status-code 400})))
       ;; ok, at this point we can run the query
-      (let [merged-id-params (param-values-merged-params id->slug slug->id embedding-params slug-token-params id-query-params)]
-        (try
-          (binding [api/*current-user-permissions-set* (atom #{"/"})
-                    api/*is-superuser?*                true]
-            (parameters.dashboard/param-values (t2/select-one :model/Dashboard :id dashboard-id) searched-param-id merged-id-params prefix))
-          (catch Throwable e
-            (throw (ex-info (.getMessage e)
-                            {:merged-id-params merged-id-params}
-                            e)))))
+      (if-let [allowed-values (get allowed (keyword searched-param-slug))]
+        ;; the token restricts this parameter: only ever list the allowed values
+        (allowed-values-matching-prefix allowed-values prefix)
+        (let [merged-id-params (param-values-merged-params id->slug slug->id embedding-params slug-token-params
+                                                           id-query-params allowed)]
+          (try
+            (binding [api/*current-user-permissions-set* (atom #{"/"})
+                      api/*is-superuser?*                true]
+              (parameters.dashboard/param-values (t2/select-one :model/Dashboard :id dashboard-id) searched-param-id merged-id-params prefix))
+            (catch Throwable e
+              (throw (ex-info (.getMessage e)
+                              {:merged-id-params merged-id-params}
+                              e))))))
       (catch Throwable e
         (let [e (ex-info (.getMessage e)
                          {:dashboard-id        dashboard-id
@@ -593,6 +698,7 @@
                                              (get unsigned-token :_embedding_params))
                                       published-embedding-params)
          param-slug                 (get id->slug param-key)
+         allowed                    (allowed-param-values unsigned-token)
          locked-param-ids           (into #{}
                                           (keep (fn [[param param-type]]
                                                   (when (= param-type "locked")
@@ -605,6 +711,9 @@
      (when (get slug-token-params (keyword param-slug))
        (throw (ex-info (tru "You can''t specify a value for {0} if it''s already set in the JWT." (pr-str param-slug))
                        {:status-code 400})))
+     (when-let [allowed-values (get allowed (keyword param-slug))]
+       (api/check (allowed-value? allowed-values value)
+                  [400 (tru "You''re not allowed to use the value {0} for {1}." (pr-str value) param-slug)]))
      (let [constraints (-> (param-values-merged-params id->slug slug->id embedding-params slug-token-params {})
                            (select-keys locked-param-ids))]
        (binding [api/*current-user-permissions-set* (atom #{"/"})

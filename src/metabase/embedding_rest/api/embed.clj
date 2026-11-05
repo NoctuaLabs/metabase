@@ -98,6 +98,7 @@
        :export-format export-format
        :card-id card-id
        :token-params (embedding.jwt/get-in-unsigned-token-or-throw unsigned-token [:params])
+       :allowed-param-values (api.embed.common/allowed-param-values unsigned-token)
        :embedding-params (t2/select-one-fn :embedding_params :model/Card :id card-id)
        :query-params (api.embed.common/parse-query-params (dissoc query-params :format_rows :pivot_results))
        :qp qp
@@ -194,6 +195,7 @@
        :card-id card-id
        :embedding-params (t2/select-one-fn :embedding_params :model/Dashboard :id dashboard-id)
        :token-params (embedding.jwt/get-in-unsigned-token-or-throw unsigned-token [:params])
+       :allowed-param-values (api.embed.common/allowed-param-values unsigned-token)
        :query-params (api.embed.common/parse-query-params (dissoc query-params :format_rows :pivot_results))
        :constraints constraints
        :qp qp

@@ -1916,3 +1916,76 @@
                       "Should find at least one venue with uppercase 'Red' in the name")
                   (is (some #(re-find #"red" %) venue-names)
                       "Should find at least one venue with lowercase 'red' in the name"))))))))))
+
+;;; ---------------------------------- _allowed_param_values JWT claim (Noctua) ----------------------------------
+
+(deftest allowed-param-values-claim-test
+  (testing "claim is normalized to keyword slug -> vector of non-nil distinct values"
+    (is (= {:game ["Arrow Free"] :venue_id [1 2]}
+           (api.embed.common/allowed-param-values
+            {:_allowed_param_values {:game "Arrow Free" :venue_id [1 2 2 nil] :empty []}}))))
+  (testing "no claim -> empty map"
+    (is (= {} (api.embed.common/allowed-param-values {:params {}})))))
+
+(deftest enforce-allowed-param-values-test
+  (let [allowed {:game ["Arrow Free" "Color Room 3D"]}]
+    (testing "blank values are replaced with the allowed set"
+      (doseq [blank [nil "" []]]
+        (is (= {:game ["Arrow Free" "Color Room 3D"]}
+               (api.embed.common/enforce-allowed-param-values {:game blank} allowed ["game"])))))
+    (testing "allowed values pass through untouched"
+      (is (= {:game ["Arrow Free"]}
+             (api.embed.common/enforce-allowed-param-values {:game ["Arrow Free"]} allowed ["game"]))))
+    (testing "disallowed values throw a 400"
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"not allowed to use the value \"Hamster Jump\""
+                            (api.embed.common/enforce-allowed-param-values {:game ["Arrow Free" "Hamster Jump"]}
+                                                                           allowed ["game"]))))
+    (testing "slugs that don't exist on the dashboard are ignored"
+      (is (= {} (api.embed.common/enforce-allowed-param-values {} allowed ["other"]))))))
+
+(deftest dashboard-allowed-param-values-test
+  (with-embedding-enabled-and-new-secret-key!
+    (with-temp-dashcard [dashcard {:dash {:enable_embedding true
+                                          :embedding_params {:venue_id "enabled"}
+                                          :parameters       [{:id      "_VENUE_ID_"
+                                                              :name    "Venue ID"
+                                                              :slug    "venue_id"
+                                                              :type    "id"
+                                                              :target  [:dimension (mt/id :venues :id)]
+                                                              :default [5]}]}}]
+      (let [claim {:_allowed_param_values {:venue_id [1 2]}}]
+        (testing "dashboard metadata turns the param into a static list of the allowed values"
+          (is (=? {:parameters [{:slug                 "venue_id"
+                                 :values_source_type   "static-list"
+                                 :values_source_config {:values [1 2]}
+                                 :default              [1]}]}
+                  (client/client :get 200 (str "embed/dashboard/" (dash-token (:dashboard_id dashcard) claim))))))
+        (testing "an empty filter is limited to the allowed values"
+          (is (= [[2]] (mt/rows (client/client :get 202 (dashcard-url dashcard claim)))))
+          (is (= [[2]] (mt/rows (client/client :get 202 (str (dashcard-url dashcard claim) "?venue_id="))))))
+        (testing "an allowed value works"
+          (is (= [[1]] (mt/rows (client/client :get 202 (str (dashcard-url dashcard claim) "?venue_id=1"))))))
+        (testing "a value outside the allowlist is rejected"
+          (is (= "You're not allowed to use the value \"5\" for venue_id."
+                 (client/client :get 400 (str (dashcard-url dashcard claim) "?venue_id=5")))))
+        (testing "tokens without the claim are unaffected"
+          (is (= [[100]] (mt/rows (client/client :get 202 (dashcard-url dashcard))))))))))
+
+(deftest dashboard-param-values-with-allowed-values-test
+  (with-chain-filter-fixtures! [{:keys [dashboard]}]
+    (t2/update! :model/Dashboard (:id dashboard)
+                {:embedding_params {"category_id" "enabled", "category_name" "enabled", "price" "enabled"}})
+    (let [token (dash-token dashboard {:_allowed_param_values {:category_name ["Asian" "BBQ"]}})]
+      (testing "values endpoint only lists the allowed values"
+        (is (= {:values [["Asian"] ["BBQ"]] :has_more_values false}
+               (client/client :get 200 (format "embed/dashboard/%s/params/_CATEGORY_NAME_/values" token)))))
+      (testing "search endpoint only searches within the allowed values"
+        (is (= {:values [["Asian"]] :has_more_values false}
+               (client/client :get 200 (format "embed/dashboard/%s/params/_CATEGORY_NAME_/search/as" token)))))
+      (testing "linked filters are constrained to the allowed values"
+        (is (= {:values [[4 "Asian"] [5 "BBQ"]] :has_more_values false}
+               (client/client :get 200 (format "embed/dashboard/%s/params/_CATEGORY_ID_/values" token)))))
+      (testing "a disallowed value in a linked filter constraint is rejected"
+        (is (= "You're not allowed to use the value \"Thai\" for category_name."
+               (client/client :get 400 (format "embed/dashboard/%s/params/_CATEGORY_ID_/values?_CATEGORY_NAME_=Thai"
+                                               token))))))))
