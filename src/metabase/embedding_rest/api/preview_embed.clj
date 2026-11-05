@@ -57,6 +57,7 @@
      :export-format    :api
      :card-id          card-id
      :token-params     (embed/get-in-unsigned-token-or-throw unsigned-token [:params])
+     :allowed-param-values (api.embed.common/allowed-param-values unsigned-token)
      :embedding-params (embed/get-in-unsigned-token-or-throw unsigned-token [:_embedding_params])
      :constraints      {:max-results max-results}
      :query-params     (api.embed.common/parse-query-params query-params))))
@@ -169,6 +170,7 @@
      :card-id          card-id
      :embedding-params embedding-params
      :token-params     token-params
+     :allowed-param-values (api.embed.common/allowed-param-values unsigned-token)
      :query-params     (api.embed.common/parse-query-params query-params))))
 
 ;; TODO (Cam 2025-11-25) please add a response schema to this API endpoint, it makes it easier for our customers to
@@ -186,6 +188,7 @@
      :export-format    :api
      :card-id          card-id
      :token-params     (embed/get-in-unsigned-token-or-throw unsigned-token [:params])
+     :allowed-param-values (api.embed.common/allowed-param-values unsigned-token)
      :embedding-params (embed/get-in-unsigned-token-or-throw unsigned-token [:_embedding_params])
      :query-params     (api.embed.common/parse-query-params query-params)
      :qp               qp.pivot/run-pivot-query)))
@@ -212,6 +215,7 @@
      :card-id          card-id
      :embedding-params embedding-params
      :token-params     token-params
+     :allowed-param-values (api.embed.common/allowed-param-values unsigned-token)
      :query-params     (api.embed.common/parse-query-params query-params)
      :qp               qp.pivot/run-pivot-query)))
 
